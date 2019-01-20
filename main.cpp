@@ -25,8 +25,8 @@ using namespace cv;
 // 开启选项之后
 #ifdef GET_SAMPLE_LIVING
 
-#define POS_COUNTER_INIT_NUM 251
-#define NEG_COUNTER_INIT_NUM 330
+#define POS_COUNTER_INIT_NUM 319
+#define NEG_COUNTER_INIT_NUM 449
 #define SAVE_PATH "D:/baseRelate/code/svm_trial/BackUpSource/Ball/Train/"
 
 int pos_counter = POS_COUNTER_INIT_NUM;
@@ -69,6 +69,11 @@ int main(int argc, char const *argv[]) {
     cv::Mat frame; 
     cv::Rect ROI_Rect(100, 100, 9*IMG_COLS, 9*IMG_ROWS);
 
+
+    cp >> frame;
+    while (frame.empty()) {
+        cp >> frame;
+    }
     while (1) {
         cp >> frame;
         if (frame.empty()) {
