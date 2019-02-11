@@ -1,4 +1,3 @@
-#include "HogGetter.h"
 #include <bits/stdc++.h>
 #include <opencv2/opencv.hpp>
 using namespace std;
@@ -12,6 +11,7 @@ using namespace cv;
 // #define PIC_MODE
 
 // 是否在达尔文上跑
+// 可用 CV_MAJOR_VERSION代替
 // #define RUN_ON_DARWIN
 
 // 在摄像机模式获得样本
@@ -27,7 +27,7 @@ using namespace cv;
 
 #define POS_COUNTER_INIT_NUM 319
 #define NEG_COUNTER_INIT_NUM 449
-#define SAVE_PATH "D:/baseRelate/code/svm_trial/BackUpSource/Ball/Train/"
+#define SAVE_PATH "../BackUpSource/Ball/Train/"
 
 int pos_counter = POS_COUNTER_INIT_NUM;
 int neg_counter = NEG_COUNTER_INIT_NUM;
@@ -62,13 +62,16 @@ void GetXsCurrectRate(const string& test_set_path, const string& test_image_post
 
 int main(int argc, char const *argv[]) {
     // load SVM model
+#if CV_MAJOR_VERSION < 3
     CvSVM tester;
     tester.load(MODEL_NAME);
+#else
+    cv::Ptr<cv::ml::SVM> tester = cv::ml::SVM::load(MODEL_NAME);
+#endif
 #ifdef CAMERA_MODE
     cv::VideoCapture cp(0);
     cv::Mat frame; 
     cv::Rect ROI_Rect(100, 100, 9*IMG_COLS, 9*IMG_ROWS);
-
 
     cp >> frame;
     while (frame.empty()) {
@@ -80,15 +83,10 @@ int main(int argc, char const *argv[]) {
             cerr << __LINE__ <<"frame empty"<<endl;
             return -1;
         }
-#ifdef RUN_ON_DARWIN
+#if CV_MAJOR_VERSION < 3
         cv::flip(frame, frame, -1);
         cv::resize(frame, frame, cv::Size(320, 240));
 #endif
-        // cv::Mat t_hsl;
-        // cv::Mat t_channels[3];
-        // cv::cvtColor(frame, t_hsl, CV_BGR2HLS);
-        // cv::split(t_hsl, t_channels);
-        // cv::Mat ROI = t_channels[1].clone();
         cv::Mat ROI = frame(ROI_Rect).clone();
         cv::resize(ROI, ROI, cv::Size(IMG_COLS, IMG_ROWS));
         cv::HOGDescriptor hog_des(Size(IMG_COLS, IMG_ROWS), Size(16,16), Size(8,8), Size(8,8), 9);
@@ -98,7 +96,7 @@ int main(int argc, char const *argv[]) {
         cv::Mat t(hog_vec);
         cv::Mat hog_vec_in_mat = t.t();
         hog_vec_in_mat.convertTo(hog_vec_in_mat, CV_32FC1);
-
+#if CV_MAJOR_VERSION < 3
         int lable = (int)tester.predict(hog_vec_in_mat);
         if (lable == POS_LABLE) {
             cv::rectangle(frame, ROI_Rect, cv::Scalar(0, 255, 0), 2);
@@ -106,6 +104,18 @@ int main(int argc, char const *argv[]) {
         else {
             cv::rectangle(frame, ROI_Rect, cv::Scalar(0, 0, 255), 2);
         }
+#else
+        cv::Mat lable;
+        tester->predict(hog_vec_in_mat, lable);
+        cout<<lable<<endl;
+        if (lable.at<float>(0, 0) == POS_LABLE) {
+            cv::rectangle(frame, ROI_Rect, cv::Scalar(0, 255, 0), 2);
+        } 
+        else {
+            cv::rectangle(frame, ROI_Rect, cv::Scalar(0, 0, 255), 2);
+        }
+#endif
+        
         cv::imshow("frame", frame);
         char key = cv::waitKey(20);
         if (key == 'q') {
