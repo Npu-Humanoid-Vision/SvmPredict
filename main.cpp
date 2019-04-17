@@ -1,3 +1,5 @@
+#include "Params.h"
+
 #include <bits/stdc++.h>
 #include <opencv2/opencv.hpp>
 using namespace std;
@@ -5,6 +7,7 @@ using namespace cv;
 
 #define POS_LABLE 1
 #define NEG_LABLE 0
+#define RAW_SAMPLE -1
 
 // 摄像机模式/图片模式
 #define CAMERA_MODE
@@ -17,20 +20,23 @@ using namespace cv;
 // 在摄像机模式获得样本
 #define GET_SAMPLE_LIVING
 
-#define MODEL_NAME "../SvmTrain/ball_linear_auto.xml"
+#define IMG_COLS 128
+#define IMG_ROWS 128
 
-#define IMG_COLS 32
-#define IMG_ROWS 32
+#undef MODEL_NAME
+#define MODEL_NAME "../SvmTrain/model/BigBall/c_svc_with_moment&lbp.xml"
 
 // 开启选项之后
 #ifdef GET_SAMPLE_LIVING
 
-#define POS_COUNTER_INIT_NUM 319
-#define NEG_COUNTER_INIT_NUM 449
-#define SAVE_PATH "../BackUpSource/Ball/Train/"
+#define POS_COUNTER_INIT_NUM 460
+#define NEG_COUNTER_INIT_NUM 511
+#define RAW_COUNTER_INIT_NUM 0
+#define SAVE_PATH "../../BackUpSource/BigBall/Raw/"
 
 int pos_counter = POS_COUNTER_INIT_NUM;
 int neg_counter = NEG_COUNTER_INIT_NUM;
+int raw_counter = RAW_COUNTER_INIT_NUM;
 
 string GetPath(string save_path, int lable) {
     stringstream t_ss;
@@ -44,9 +50,17 @@ string GetPath(string save_path, int lable) {
         t_s += ".jpg";
         cout<<t_s<<endl;
     }
-    else {
+    else if(lable == NEG_LABLE) {
         save_path += "Neg/";
         t_ss << neg_counter++;
+        t_ss >> t_s;
+        t_s = save_path + t_s;
+        t_s += ".jpg";
+        cout<<t_s<<endl;   
+    }
+    else {
+        save_path += "Raw/";
+        t_ss << raw_counter++;
         t_ss >> t_s;
         t_s = save_path + t_s;
         t_s += ".jpg";
@@ -56,9 +70,6 @@ string GetPath(string save_path, int lable) {
 }
 #endif
 
-
-void GetXsCurrectRate(const string& test_set_path, const string& test_image_postfix,
-                    int currect_lable, double& currect_rate); 
 
 int main(int argc, char const *argv[]) {
     // load SVM model
@@ -71,7 +82,11 @@ int main(int argc, char const *argv[]) {
 #ifdef CAMERA_MODE
     cv::VideoCapture cp(0);
     cv::Mat frame; 
-    cv::Rect ROI_Rect(100, 100, 9*IMG_COLS, 9*IMG_ROWS);
+    int roi_rect_x = 100;
+    int roi_rect_y = 100;
+    int roi_rect_col = 2*IMG_COLS;
+    int roi_rect_row = 2*IMG_ROWS;
+    cv::Rect ROI_Rect(roi_rect_x, roi_rect_y, roi_rect_col, roi_rect_row);
 
     cp >> frame;
     while (frame.empty()) {
@@ -83,7 +98,7 @@ int main(int argc, char const *argv[]) {
             cerr << __LINE__ <<"frame empty"<<endl;
             return -1;
         }
-#if CV_MAJOR_VERSION < 3
+#ifdef RUN_ON_DARWIN
         cv::flip(frame, frame, -1);
         cv::resize(frame, frame, cv::Size(320, 240));
 #endif
@@ -93,11 +108,33 @@ int main(int argc, char const *argv[]) {
         std::vector<float> hog_vec;
         hog_des.compute(ROI, hog_vec);
 
+        for (int j=0; j<6; j++) {
+            cv::Mat ROI_l = GetUsedChannel(ROI, j);
+            cv::Moments moment = cv::moments(ROI_l, false);
+
+            cv::Mat lbp_mat;
+            // cv::resize(t_image_l, t_image_l, cv::Size(30, 30));
+            calExtendLBPFeature(ROI_l, Size(16, 16), lbp_mat);
+            for (int k=0; k<lbp_mat.cols; k++) {
+                hog_vec.push_back(lbp_mat.at<float>(0, k));
+            }
+
+            double hu[7];
+            cv::HuMoments(moment, hu);
+            for (int k=0; k<7; k++) {
+                hog_vec.push_back(hu[k]);
+            }
+            // for (int k=0; k<lbp_vec.cols; k++) {
+            //     t_descrip_vec.push_back(lbp_vec.at<uchar>(0, k));
+            // }
+        }
+        // cout<<hog_vec.size()<<endl;
         cv::Mat t(hog_vec);
         cv::Mat hog_vec_in_mat = t.t();
         hog_vec_in_mat.convertTo(hog_vec_in_mat, CV_32FC1);
 #if CV_MAJOR_VERSION < 3
         int lable = (int)tester.predict(hog_vec_in_mat);
+        // cout<<tester.predict(hog_vec_in_mat)<<endl;
         if (lable == POS_LABLE) {
             cv::rectangle(frame, ROI_Rect, cv::Scalar(0, 255, 0), 2);
         }
@@ -107,7 +144,6 @@ int main(int argc, char const *argv[]) {
 #else
         cv::Mat lable;
         tester->predict(hog_vec_in_mat, lable);
-        cout<<lable<<endl;
         if (lable.at<float>(0, 0) == POS_LABLE) {
             cv::rectangle(frame, ROI_Rect, cv::Scalar(0, 255, 0), 2);
         } 
@@ -127,7 +163,35 @@ int main(int argc, char const *argv[]) {
         else if (key == 'n') {
             cv::imwrite(GetPath(SAVE_PATH, NEG_LABLE), ROI);
         }
-
+        else if (key == 'r') {
+            cv::imwrite(GetPath(SAVE_PATH, RAW_SAMPLE), frame);
+        }
+        else if (key == 'i') {
+            roi_rect_col -= 15;
+            roi_rect_row -= 15;
+            ROI_Rect = cv::Rect(roi_rect_x, roi_rect_y, roi_rect_col, roi_rect_row);
+        }
+        else if (key == 'o') {
+            roi_rect_col += 15;
+            roi_rect_row += 15;
+            ROI_Rect = cv::Rect(roi_rect_x, roi_rect_y, roi_rect_col, roi_rect_row);
+        }
+        else if (key == 'w') {
+            roi_rect_y -= 15;
+            ROI_Rect = cv::Rect(roi_rect_x, roi_rect_y, roi_rect_col, roi_rect_row);
+        }
+        else if (key == 's') {
+            roi_rect_y += 15;
+            ROI_Rect = cv::Rect(roi_rect_x, roi_rect_y, roi_rect_col, roi_rect_row);
+        }
+        else if (key == 'a') {
+            roi_rect_x -= 15;
+            ROI_Rect = cv::Rect(roi_rect_x, roi_rect_y, roi_rect_col, roi_rect_row);
+        }
+        else if (key == 'd') {
+            roi_rect_x += 15;
+            ROI_Rect = cv::Rect(roi_rect_x, roi_rect_y, roi_rect_col, roi_rect_row);
+        }
     }
 
 #endif
